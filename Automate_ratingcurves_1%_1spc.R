@@ -53,6 +53,14 @@ data = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\E_validation\\e_widths_1
 
 #data = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\E_validation\\e_widths_1percentiles\\quantile_width_export_combined.csv")
 
+###west. 
+data = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\W_validation\\xsections\\western_gauges_quants_comb.csv")
+data_change = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\W_validation\\xsections\\western_gauges_change.csv")
+data_flags = grep("flag", names(data_data))
+data = data%>%select(-data_flags)
+data_val = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\W_validation\\2010_2020_811\\val_comb.csv")
+####
+
 
 names(data_sj) = substring(names(data_sj), 5)
 #data = data[order(data$ID),]
@@ -821,10 +829,29 @@ for (i in 1:nrow(Site_number_xsections)){
         data_val_sub_agg_1[order(data_val_sub_agg_1$Group.1),]
         
         
+        ds_df = data_val
+        ds_df$spl1 = try(spl_1(ds_df$calc_mean))
+        ds_df$spl2 = try(spl_2(ds_df$calc_mean))
+        ds_df$spl3 = try(spl_3(ds_df$calc_mean))
+        ds_df$spl4 = try(spl_4(ds_df$calc_mean))
+        ds_df$spl5 = try(spl_5(ds_df$calc_mean))
+        
+        ds_df_agg = ds_df[,12 & 14:18] %>% group_by(Date) %>%
+          mutate(grp = 1:n())%>%
+          gather(var, val, -Date, -grp) %>%
+          unite("var_grp", var, grp, sep ='') %>%
+          spread(var_grp, val, fill = '')
+        
+        ds_df_spl_names = grep("^spl", colnames(ds_df_agg))
+        ds_df_sd = apply(ds_df_agg[,ds_df_spl_names], 1, FUN = sd, na.rm = TRUE)
+        ds_df_sd1 = cbind(as.vector(ds_df_agg$Date), as.vector(ds_df_sd))
+        ds_df_sd1 = as.data.frame(ds_df_sd1)
+        ds_df_sd1$date = as.Date(ds_df_sd1$V1)
         
         
-        
-        
+        data_val_sub_agg_sd = try(aggregate(data_val_subset$calc_mean, by=list(data_val_subset$Date), FUN=sd))
+        data_val_sub_agg_2 = data_val_sub_agg_1
+        data_val_sub_agg_2$sd = data_val_sub_agg_sd$x[match(data_val_sub_agg_1$Group.1, data_val_sub_agg_sd$Group.1)]
         
         ## usgs width vs usgs discharge points. 
         # points(usgs_q_subset$q,data_val_sub_agg_1$x, pch=17, col="green")
@@ -886,7 +913,7 @@ for (i in 1:nrow(Site_number_xsections)){
         rlabel = try(bquote(italic(R) == .(format(r, digits = 3))))
         if(!is.error(r)){
           par(mfrow =c(2, 2), mar = c(4, 4, 5, 4))
-          #par(mfrow = c(2,3), mar = c(0, 0, 3, 0))
+          #par(mfrow = c(1,3), mar = c(4,4,5,4))
           #layout(matrix(c(1,1,0,2,2,2,2,2,2,0,3,3), 1, 12, byrow = TRUE))
           #layout(matrix(c(1,1,0,2,2,2,2,2,2,0,3,3), 2, 12, byrow = TRUE))
         layout(matrix(c(1,1,1,1,1,0,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3), 2, 11, byrow = TRUE))
@@ -915,18 +942,32 @@ for (i in 1:nrow(Site_number_xsections)){
           # try(text(as.numeric(xSecq[5,100]), as.numeric(xSecw[5,100]), xSecID[5]))
           #  
           
+          poly_bound_mx = cbind(x+w_sd, spl(x))
+          poly_bound_mn = cbind(x-w_sd, spl(x))
+          
+          ##represents error margins from rating curves throughout plot. 
+          polygon(c(poly_bound_mn[,1],  max(poly_bound_mx[,1], na.rm = TRUE), rev(poly_bound_mx[,1]), min(poly_bound_mn[,1], na.rm = TRUE))
+                  ,c(poly_bound_mn[,2],  max(poly_bound_mx[,2], na.rm = TRUE), rev(poly_bound_mx[,2]), min(poly_bound_mn[,2], na.rm = TRUE)),
+                   col = yarrr::transparent("red", trans.val = .95), border = NA)
           
           
           a=try(lines(x ,spl(x), col = "black", lwd = 2))
-          #try(lines(spl(x), x+w_sd, col = "red"))
-          #try(lines(spl(x), x - w_sd, col = "red"))
+          #try(lines(x+w_sd, spl(x), col = "red"))
+          #try(lines(x - w_sd, spl(x), col = "red"))
           #points(data_val_sub_agg_1$x,usgs_q_subset$q, pch=17, col="green")
+          points(usgs[,2], usgs[,1], col = "lightgray", lwd = 0.5)
           try(points(data_val_sub_agg_1$x,dv,pch = 1, col = "blue"))
           #try(points(dv, data_val_sub_agg_1$x+ spl_sd(data_val_sub_agg_1$x), pch = 17, col = "blue"))
           
-          try(arrows(y0 = dv, x0= data_val_sub_agg_1$x - spl_sd(data_val_sub_agg_1$x), 
-                     y1 = dv, x1 = data_val_sub_agg_1$x + spl_sd(data_val_sub_agg_1$x), col = "indianred" , 
+          ##new error bars: represent each day sd from landsat withds. 
+          try(arrows(y0 = dv, x0= data_val_sub_agg_1$x - data_val_sub_agg_2$sd, 
+                     y1 = dv, x1 = data_val_sub_agg_1$x + data_val_sub_agg_2$sd, col = "indianred" , 
                      code=3, angle = 180, length = 0, lwd = 0.5))
+          
+          ##old error bars: represent sd of rating curves
+          # try(arrows(y0 = dv, x0= data_val_sub_agg_1$x - spl_sd(data_val_sub_agg_1$x), 
+          #            y1 = dv, x1 = data_val_sub_agg_1$x + spl_sd(data_val_sub_agg_1$x), col = "indianred" , 
+          #            code=3, angle = 180, length = 0, lwd = 0.5))
           # 
           
           location = auto.legend.pos(na.omit(x), na.omit(y))
@@ -940,18 +981,18 @@ for (i in 1:nrow(Site_number_xsections)){
                          "lightgray"),
                  lty=c(1, NA, NA),
                  lwd = c(2, NA, NA),
-                 pch = c(NA, 17, 01), 
+                 pch = c(NA, 01, 01), 
                  bty = "n", 
                  text.col = "black", 
                  horiz = FALSE, cex = 0.6)
           
           
-          points(usgs[,2], usgs[,1], col = "lightgray", lwd = 0.5)
+          
           
           u_l_mn = min(c(u$V1, l$dv), na.rm = TRUE)
           u_l_mx = max(c(u$V1, l$dv), na.rm = TRUE)
           
-          try(plot(c(u_l_mn, u_l_mx), c(u_l_mn, u_l_mx), type = "n", xlab = "In situ Q (cms)", ylab = "Landsat Discharge (cms)", main = "In situ vs Landsat"))
+          try(plot(c(u_l_mn, u_l_mx), c(u_l_mn, u_l_mx), type = "n", xlab = "In situ Discharge (cms)", ylab = "Landsat Discharge (cms)", main = "In situ vs Landsat"))
           points(u$V1, l$dv, col = "blue")
           abline(1,1)
           #try(plot(u$V1, l$dv, xlab = "In situ Q (cms)", ylab = "Landsat Q (cms)", main = "In situ vs Landsat", asp = 1))
@@ -1059,7 +1100,7 @@ for (i in 1:nrow(Site_number_xsections)){
           data_val_sub_agg_1$date = as.Date(data_val_sub_agg_1$Group.1, "%Y-%m-%d")
           
           
-          # 
+          #### Calculate Standard Dev for Q based on SD from using each individual rating curve. 
           ry = try(cbind(spl_1(data_val_sub_agg_1$x), spl_2(data_val_sub_agg_1$x), spl_3(data_val_sub_agg_1$x), spl_4(data_val_sub_agg_1$x), spl_5(data_val_sub_agg_1$x)))
           
           
@@ -1121,27 +1162,59 @@ for (i in 1:nrow(Site_number_xsections)){
           usgs_q_2015_wval$sd_mx = usgs_q_2015_wval$landat + usgs_q_2015_wval$sd
           usgs_q_2015_wval$sd_mn = usgs_q_2015_wval$landat - usgs_q_2015_wval$sd
           
+          ############### new sd. 
+          ds_join = left_join(usgs_q_2015_wval, ds_df_sd1)
+          usgs_q_2015_wval = ds_join
+          usgs_q_2015_wval$V2[mapply(is.na, usgs_q_2015_wval$landat)] = NA
+          usgs_q_2015_wval$V2 = as.numeric(as.character(usgs_q_2015_wval$V2))
+          usgs_q_2015_wval$sd_mx1 = usgs_q_2015_wval$landat + usgs_q_2015_wval$V2
+          usgs_q_2015_wval$sd_mn1 = usgs_q_2015_wval$landat - usgs_q_2015_wval$V2
           
-          gage_stats_col13 = mean(usgs_q_2015_wval$sd, na.rm = TRUE)
+          
+          ###### insitu vs landsat error updated to new error bars. 
+          in_situ_sd = usgs_q_2015_wval[!is.na(usgs_q_2015_wval$landat),]
+          in_situ_sd_mx = in_situ_sd$sd_mx1[order(in_situ_sd$q)]
+          in_situ_sd_mn = in_situ_sd$sd_mn1[order(in_situ_sd$q)]
+          
+          
+          ####changed the gage_stats sd
+          gage_stats_col13 = mean(usgs_q_2015_wval$V2)
+          #gage_stats_col13 = mean(usgs_q_2015_wval$sd, na.rm = TRUE)
           gage_stats$std_Q[i] = gage_stats_col13
           gage_stats_col14 = sqrt(var(error, na.rm = TRUE))
           gage_stats$STDE[i] = gage_stats_col14
+          mean_q = mean(usgs_q_2015_wval$landat, na.rm = TRUE)
+          
+ 
+          
+
+          
+          try(arrows(x0 = in_situ_sd$q[order(in_situ_sd$q)], y0=  in_situ_sd_mn - mean_q, 
+                     x1 = in_situ_sd$q[order(in_situ_sd$q)], y1 = in_situ_sd_mx + mean_q, col = "indianred",
+                     code=3, angle = 180, length = 0, lwd = 0.5))
           
           try(plot(usgs_q_2015_wval$date, usgs_q_2015_wval$q, xlab = "", ylab = "Discharge (cms)", type = "l", col = "lightgray"))
           
           try(points(usgs_q_2015_wval$date,usgs_q_2015_wval$landat, col = "blue"))
           
-          mean_q = mean(usgs_q_2015_wval$landat, na.rm = TRUE)
           
-          try(arrows(x0 = usgs_q_2015_wval$date, y0= usgs_q_2015_wval$sd_mn - mean_q, 
-                      x1 = usgs_q_2015_wval$date, y1 = usgs_q_2015_wval$sd_mx + mean_q, col = "indianred",
-                      code=3, angle = 180, length = 0, lwd = 0.5))
-          sd_vals[i, 1:length(usgs_q_2015_wval$sd[!is.na(usgs_q_2015_wval$landat)])] = usgs_q_2015_wval$sd[!is.na(usgs_q_2015_wval$landat)]
+          ##represent errors from determing each Q across all rating curves. Maybe too much? 
+          try(arrows(x0 = usgs_q_2015_wval$date, y0=  usgs_q_2015_wval$sd_mn1 - mean_q, 
+                     x1 = usgs_q_2015_wval$date, y1 = usgs_q_2015_wval$sd_mx1 + mean_q, col = "indianred",
+                     code=3, angle = 180, length = 0, lwd = 0.5))
           
-          # try(arrows(x0 = usgs_q_2015_wval$date, y0= usgs_q_2015_wval$sd_mn - (usgs_q_2015_wval$sd_mn * .725), 
-          #            x1 = usgs_q_2015_wval$date, y1 = usgs_q_2015_wval$sd_mx + (usgs_q_2015_wval$sd_mn * .725), col = "black",
-          #            code=3, angle = 180, length = 0, lwd = 0.5))
-          # 
+          ##old error bars. represent sd from using 5 ind rating curves to determine Q. 
+          # try(arrows(x0 = usgs_q_2015_wval$date, y0= usgs_q_2015_wval$sd_mn - mean_q, 
+          #             x1 = usgs_q_2015_wval$date, y1 = usgs_q_2015_wval$sd_mx + mean_q, col = "indianred",
+          #             code=3, angle = 180, length = 0, lwd = 0.5))
+          
+          
+          ####change sd vals to new sd. 
+          sd_vals[i, 1:length(usgs_q_2015_wval$V2[!is.na(usgs_q_2015_wval$landat)])] = usgs_q_2015_wval$V2[!is.na(usgs_q_2015_wval$landat)]
+          
+          #sd_vals[i, 1:length(usgs_q_2015_wval$sd[!is.na(usgs_q_2015_wval$landat)])] = usgs_q_2015_wval$sd[!is.na(usgs_q_2015_wval$landat)]
+          
+        
           #try(plot(smooth.spline(na.omit(dv), spar = 0.3), ylim = c(q_min_plot, q_max_plot), type = "l", xlab = "2015-Present", ylab = "Q (cms)", xaxt = 'n', main = "Hydrograph 2015-Present",col= "red"))
           title("Hydrograph 2015-2020", line = 0.5)
           
@@ -1256,7 +1329,7 @@ legend("bottomright", legend = c("Normalized Bias", "Normalized STDE", "Normaliz
        col = c("gold", "blue", "forestgreen"), lty = c(1, 1, 1))
 
 ################################################################################################ Estimated Error Metrics. 
-GRADES_b = Q_df * 0.2
+GRADES_b = Q_df * 0.5 #0.2
 Total_estimated_error = GRADES_b + sd_vals
 
 error_estimate = l_vals[!is.na(l_vals)] - sd_vals
@@ -1275,14 +1348,14 @@ norm_rmse_est = rmse_estimate/Q_df
 norm_bias_est = abs(mean_error_estimate)/Q_df
 norm_stde_est = STDE_estimate/Q_df
 
-norm_stde_est = norm_stde_est[is.na(Total_gage_stats_dams$dam) & !is.na(Total_gage_stats_dams$Site_number & Total_gage_stats_dams$change<10)]
+norm_stde_est = norm_stde_est[is.na(Total_gage_stats_dams$dam) & !is.na(Total_gage_stats_dams$Site_number) & Total_gage_stats_dams$change<10]
 
 
 ############################################################################################### Cedric's plots. Accounting for more Bias. 
 
 plot.new()
 par(mfrow =c(2,2), oma = c(0, 0, 2, 0))
-plot(ecdf(norm_rmse_est), xlim = c(0, 1), col = "forestgreen", main = "Cumulated estimated error metrics", cex.main = 0.8, cex = 0.15)
+plot(ecdf(norm_rmse_est), xlim = c(0, 5), col = "forestgreen", main = "Cumulated estimated error metrics", cex.main = 0.8, cex = 0.15)
 mtext("Estimated error metrics", outer = TRUE, cex = 1.5)
 lines(ecdf(norm_bias_est), col = "gold", cex = 0.15)
 lines(ecdf(norm_stde_est), col = "blue", cex = 0.15)
