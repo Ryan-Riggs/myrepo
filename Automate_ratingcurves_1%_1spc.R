@@ -7,6 +7,7 @@ library(ggplot2)
 library(rgeos)
 library(dplyr)
 library(gmt)
+library(vroom)
 
 if (!"foreign" %in% rownames(installed.packages())){
   install.packages("foreign")}; require(foreign)
@@ -18,7 +19,40 @@ if (!"RColorBrewer" %in% rownames(installed.packages())){
   install.packages("RColorBrewer")}; require(RColorBrewer)
 if (!"zyp" %in% rownames(installed.packages())){
   install.packages("zyp")}; require(zyp)
+#################################################################### East and west gauges together. Surface reflectance. 
+data = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\NA_quantiles_combined.csv")
+data_flags = grep("flag", names(data))
+data = data%>%select(-data_flags)
+data_val = vroom(list.files("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Surface_reflectance\\Gauges_per_scene_84_09_surface_reflectance\\", full.names = TRUE))
+data_val = as.data.frame(data_val)
+data$ID = data$ID_2
+data_val$ID = data_val$ID_2
 
+
+################################################################### European gauges. Surface Reflectance. 
+data = vroom(list.files("E:\\research\\GRWL\\GRWL_2015_present\\Eur_validation\\EU_quantiles\\", full.names = TRUE))
+data = as.data.frame(data)
+data_flags = grep("flag", names(data))
+data = data%>%select(-data_flags)
+data$ID = data$ID_2
+data_val = vroom(list.files("E:\\research\\GRWL\\GRWL_2015_present\\Eur_validation\\EU_test\\", full.names = TRUE))
+data_val = as.data.frame(data_val)
+data_val$ID = data_val$ID_2
+
+
+###################################################################East and west gauge locations together. Widths from channel mask. 
+data = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\NA_quantiles_combined.csv")
+data_val_8409 = vroom(list.files("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Gauges_84_09\\Gauges_per_scene_84_09\\", full.names = TRUE))
+data_val_8409 = as.data.frame(data_val_8409)
+data_val_10_20 = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\NA_data_val_2010_2020.csv")
+data_val8420 = rbind(data_val_10_20[,2:11], data_val_8409)
+
+data_val_8415 = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\NA_data_val_8414.csv")
+data_val = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\NA_data_val_1520.csv")
+data = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\NA_quantiles_combined.csv")
+data_flags = grep("flag", names(data))
+data = data%>%select(-data_flags)
+######################################################################
 
 ####before running in arc. 
 data = read.dbf("E:\\research\\GRWL\\GRWL_2015_present\\W_validation\\1_spc\\merge_1.dbf")
@@ -90,6 +124,13 @@ data_val$system.index = substr(data_val$system.index, 0, 20)
 d_dates = str_sub(data_val$system.index, start = -8)
 d_date = as.Date(d_dates, format = "%Y%m%d")
 data_val$Date = d_date
+
+data_val$`system:index` = gsub("^[[:digit:]]_", "", data_val$`system:index`)
+data_val$`system:index` = substr(data_val$`system:index`, 0, 20)
+d_dates = str_sub(data_val$`system:index`, start = -8)
+d_date = as.Date(d_dates, format = "%Y%m%d")
+data_val$Date = d_date
+
 
 ##read in validation dates to assign to validation cross section measurements. 
 validation_dates = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\E_validation\\1spc_3x\\2013\\East_val_13_3x_1spc_dates.csv")
@@ -281,7 +322,7 @@ tabcols = grep("\\<[^w]", names(tab))
 tab = cbind(test, tab[,tabcols])
 
 
-wd_GRADES =setwd("E:\\research\\GRADES\\percentiles_1_w\\")
+wd_GRADES =setwd("E:\\research\\GRADES\\percentiles_1_gauges\\")
 COMID_files = list.files(wd_GRADES)
 COMID_vals = gsub(".csv", "", COMID_files)
 
@@ -586,10 +627,14 @@ val_dates= as.vector(nrow(data_val))
 
 ind = match(data_val$system.index, sep_id)
 val_dates = as.character(sep_val[ind])
-
-data_val$Date = val_dates
-data_val$calc_mean = data_val$mean * data_val$width_m * grwl_l
 data_val$ID = data_val$ID_2
+data_val$Date = val_dates
+
+
+data_val$calc_mean = data_val$mean * data_val$width_m * grwl_l
+data_val_8415 = data_val[data_val$Date<as.Date("2015-01-01"),]
+data_val_1520 = data_val[data_val$Date>as.Date("2014-12-31"),]
+data_val = data_val_1520
 
 auto.legend.pos <- function(x,y,xlim=NULL,ylim=NULL) {
   if (dev.cur() > 1) {
@@ -615,11 +660,63 @@ auto.legend.pos <- function(x,y,xlim=NULL,ylim=NULL) {
     }
   names(a)[which(a==0)][1]   # may delete "[1]"
 }
+start = as.Date("1979-01-01")
+nc_function = function(comid_u){
+  filt = tidync("E:\\research\\GRADES\\GRADES_Q_v01_pfaf_07_19790101_20131231.nc") %>% hyper_filter(COMID = COMID > (min(comid_u) - 1) & COMID < (max(comid_u) + 1))
+  #filt_array = filt%>%hyper_array()
+  x = filt%>% hyper_tibble() %>% 
+    dplyr::filter(time>1885)
+  x$date = start + x$time
+  return(x)
+}
+
+nc_function_8 = function(comid_u){
+  filt = tidync("E:\\research\\GRADES\\GRADES_Q_v01_pfaf_08_19790101_20131231.nc") %>% hyper_filter(COMID = COMID > (min(comid_u) - 1) & COMID < (max(comid_u) + 1))
+  #filt_array = filt%>%hyper_array()
+  x = filt%>% hyper_tibble() %>% 
+    dplyr::filter(time>1885)
+  x$date = start + x$time
+  return(x)
+}
+
+wd_g = "E:\\research\\GRADES\\Gauge_rawdata_19842014\\"
 
 
+unique_comid = unique(tab$COMID)
+unique_comid_7_ind = grep("^7", unique_comid)
+unique_comid_7 = unique_comid[unique_comid_7_ind]
+unique_comid_8_ind = grep("^8", unique_comid)
+unique_comid_8 = unique_comid[unique_comid_8_ind]
 
+quant_function = function(f){
+  filt = tidync("E:\\research\\GRADES\\GRADES_Q_v01_pfaf_07_19790101_20131231.nc") %>% hyper_filter(COMID = COMID < (f+1) & COMID > (f-1))
+  ##filt_array = filt%>%hyper_array()
+  filt_df_2k = filt%>% hyper_tibble()%>% 
+    dplyr::filter(time>1885) #1826
+  filt_df = filt_df_2k[filt_df_2k$time>1885,]
+  #quant = quantile(filt_df_2k$Q, probs = seq(.00, 1, .01), na.rm = TRUE)
+  #output[i,] = quant
+  print(paste("step:", i, sep = ""))
+  #print(quant)
+  r = paste(f, ".csv", sep="")
+  y = paste(wd_g, r, sep = "")
+  write.csv(filt_df, y)
+}
 
-
+quant_function_8 = function(f){
+  filt = tidync("E:\\research\\GRADES\\GRADES_Q_v01_pfaf_08_19790101_20131231.nc") %>% hyper_filter(COMID = COMID < (f+1) & COMID > (f-1))
+  ##filt_array = filt%>%hyper_array()
+  filt_df_2k = filt%>% hyper_tibble()%>% 
+    dplyr::filter(time>1885) #1826
+  filt_df = filt_df_2k[filt_df_2k$time>1885,]
+  #quant = quantile(filt_df_2k$Q, probs = seq(.00, 1, .01), na.rm = TRUE)
+  #output[i,] = quant
+  print(paste("step:", i, sep = ""))
+  #print(quant)
+  r = paste(f, ".csv", sep="")
+  y = paste(wd_g, r, sep = "")
+  write.csv(filt_df, y)
+}
 ## loop to create plots with rating curves, usgs data, and landsat estimated widths. ### still producing multiple plots of gages w/ diff xsections.
 
 
@@ -631,12 +728,13 @@ for (i in 1:nrow(tab)){
 }
 
 tab$change= tab$median
-
 tab$change[mapply(is.na, tab$change)] <- 0
-
-
+tab$width_m = data$width_m[match(tab$ID_2, data$ID_2)]
+Gauge_comid = vroom(list.files("E:\\research\\GRADES\\Gauge_rawdata_19842014\\", full.names = TRUE))
+Gauge_comid = as.data.frame(Gauge_comid)
+Gauge_comid$date = start+Gauge_comid$time
 data_val$Date = as.character(data_val$Date)
-
+data_val_8415$Date = as.Date(data_val_8415$Date)
 xSecq=as.data.frame(matrix(numeric(), nrow =5, ncol = 11))
 xSecw=as.data.frame(matrix(numeric(), nrow =5, ncol = 11))
 xSecIDcol=grep("V", names(Site_number_xsections))
@@ -650,6 +748,7 @@ as.data.frame(gage_stats_GRADES)
 l_vals = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 20))
 u_vals = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 20))
 sd_vals = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 20))
+width_vals = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 20))
 
 colnames(gage_stats)= c("Site_number", "GRWL_width_m","n_Landsat_obs","R_2", "R", "RMSE", "p_val","Bias", "RRMSE","avg_std", "change", "RRMSE_median", "std_Q","STDE")
 as.data.frame(gage_stats)
@@ -657,10 +756,9 @@ gage_stats_col1 = as.vector(1)
 gage_stats_col2 = as.vector(1)
 gage_stats_GRADES_col1 = as.vector(1)
 gage_stats_GRADES_col2 = as.vector(1)
-pdfOut = "E:/research/temp_plots/Western_alaska.pdf"
+paired_df_vals = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 20))
+pdfOut = "E:/research/temp_plots/USA_gauges_min_max_errorbars.pdf"
 pdf(pdfOut)
-
-Site_number_xsections_1 = Site_number_xsections
 for (i in 1:nrow(Site_number_xsections)){
   print(i)
   #for (j in 1:(ncol(Site_number_xsections))){
@@ -679,8 +777,53 @@ for (i in 1:nrow(Site_number_xsections)){
   xSecq=qTab[mInd,] ##notNA
   #xSecw = xSecw[,11:91]
   #xSecq = xSecq[,11:91]
+   mInd_paired = which(data_val_8415$ID_2 %in% xSecID)
+   paired_df = data_val_8415[mInd_paired,]
+   # try(if(regmatches(unique(paired_df$COMID), regexpr("\\d", unique(paired_df$COMID))) == 7){
+   # Q_df = nc_function(unique(paired_df$COMID))}
+   # else{Q_df = nc_function_8(unique(paired_df$COMID)[1])})
+   # paired_df = try(left_join(paired_df, Q_df, by = c("COMID" = "COMID", "Date" = "date")))
+   
+   
+   if(nrow(paired_df)>0){
+   paired_df = try(left_join(paired_df, Gauge_comid, by = c("COMID" = "COMID", "Date" = "date")))
+   if(all(is.na(paired_df$Q))){next}
+   paired_df = try(aggregate(cbind(calc_mean, Q)~Date+COMID, paired_df,mean))
+  #t.spl = approxfun(paired_df$calc_mean, paired_df$Q)
+   p_q = try(quantile(paired_df$Q, probs = seq(0,1,.01)))
+   p_w = try(quantile(paired_df$calc_mean, probs = seq(0,1,.01)))
   
-  
+   #pd_l = t.apr(min(paired_df$calc_mean):max(paired_df$calc_mean))
+   # t.apr_mx = try(approxfun(paired_df$calc_mean, paired_df$Q, ties = max))
+   # t.apr_mn = try(approxfun(paired_df$calc_mean, paired_df$Q, ties = min))
+   Natural_breaks = getJenksBreaks(paired_df$calc_mean, .1 * nrow(paired_df))
+
+   min_df = try(as.vector(length(Natural_breaks)))
+   max_df = try(as.vector(length(Natural_breaks)))
+   
+   if(min_df>2){
+   
+   for(r in 1:length(Natural_breaks)){
+     min_df[r] = min(paired_df$Q[paired_df$calc_mean>Natural_breaks[r-1] & paired_df$calc_mean<Natural_breaks[r]], na.rm = TRUE)
+     max_df[r] = max(paired_df$Q[paired_df$calc_mean>Natural_breaks[r-1] & paired_df$calc_mean<Natural_breaks[r]], na.rm = TRUE)
+   }
+   
+   natural_breaks_df = as.data.frame(Natural_breaks)
+   natural_breaks_df$min = min_df
+   natural_breaks_df$max = max_df
+   
+   # t.apr_mx = try(approxfun(paired_df$calc_mean, paired_df$Q, method = "constant", rule = 1, f = 1,ties = max))
+   # t.apr_mn = try(approxfun(paired_df$calc_mean, paired_df$Q, method = "constant", rule = 1, f = 0,ties = min))
+   
+   t.apr_mx = try(approxfun(natural_breaks_df$Natural_breaks, natural_breaks_df$max, method = "constant", rule = 1, f = 1,ties = max))
+   t.apr_mn = try(approxfun(natural_breaks_df$Natural_breaks, natural_breaks_df$min, method = "constant", rule = 1, f = 1,ties = max))
+   # plot(paired_df$calc_mean, paired_df$Q)
+   # for(i in 1:nrow(paired_df[order(paired_df$Q),])){
+   #   points(paired_df$calc_mean[i], min(t.apr_mn(paired_df$calc_mean[i-2:i+2]), na.rm = TRUE), col = "blue")
+   #   points(paired_df$calc_mean[i], max(t.apr_mx(paired_df$calc_mean[i-2:i+2]), na.rm = TRUE), col = "red")
+   #   
+   #   }
+   
   #xSecw = xSecw[,25:75]
   #xSecq = xSecq[,25:75]
   
@@ -750,6 +893,9 @@ for (i in 1:nrow(Site_number_xsections)){
     #abline(v = q_rc, col = "lightgray", lty = "dotted", lwd = 0.25)
     #abline(h = w_rc, col = "lightgray", lty = "dotted", lwd = 0.25)
     
+    ### change to use paired method for rating curves. 
+    #w_rc= p_w
+    #q_rc = p_q
     
     #lines(q_rc, w_rc, type = "l", lwd = 3) ##average xsection line before interpolation. 
     ##add in lines of rating curves to each plot. 
@@ -828,30 +974,30 @@ for (i in 1:nrow(Site_number_xsections)){
         data_val_sub_agg_1 = data_val_sub_agg[data_val_sub_agg_ind,]
         data_val_sub_agg_1[order(data_val_sub_agg_1$Group.1),]
         
-        
-        ds_df = data_val
-        ds_df$spl1 = try(spl_1(ds_df$calc_mean))
-        ds_df$spl2 = try(spl_2(ds_df$calc_mean))
-        ds_df$spl3 = try(spl_3(ds_df$calc_mean))
-        ds_df$spl4 = try(spl_4(ds_df$calc_mean))
-        ds_df$spl5 = try(spl_5(ds_df$calc_mean))
-        
-        ds_df_agg = ds_df[,12 & 14:18] %>% group_by(Date) %>%
-          mutate(grp = 1:n())%>%
-          gather(var, val, -Date, -grp) %>%
-          unite("var_grp", var, grp, sep ='') %>%
-          spread(var_grp, val, fill = '')
-        
-        ds_df_spl_names = grep("^spl", colnames(ds_df_agg))
-        ds_df_sd = apply(ds_df_agg[,ds_df_spl_names], 1, FUN = sd, na.rm = TRUE)
-        ds_df_sd1 = cbind(as.vector(ds_df_agg$Date), as.vector(ds_df_sd))
-        ds_df_sd1 = as.data.frame(ds_df_sd1)
-        ds_df_sd1$date = as.Date(ds_df_sd1$V1)
-        
-        
-        data_val_sub_agg_sd = try(aggregate(data_val_subset$calc_mean, by=list(data_val_subset$Date), FUN=sd))
-        data_val_sub_agg_2 = data_val_sub_agg_1
-        data_val_sub_agg_2$sd = data_val_sub_agg_sd$x[match(data_val_sub_agg_1$Group.1, data_val_sub_agg_sd$Group.1)]
+        ##alternate SD method. 
+        # ds_df = data_val
+        # ds_df$spl1 = try(spl_1(ds_df$calc_mean))
+        # ds_df$spl2 = try(spl_2(ds_df$calc_mean))
+        # ds_df$spl3 = try(spl_3(ds_df$calc_mean))
+        # ds_df$spl4 = try(spl_4(ds_df$calc_mean))
+        # ds_df$spl5 = try(spl_5(ds_df$calc_mean))
+        # 
+        # ds_df_agg = ds_df[,12 & 14:18] %>% group_by(Date) %>%
+        #   mutate(grp = 1:n())%>%
+        #   gather(var, val, -Date, -grp) %>%
+        #   unite("var_grp", var, grp, sep ='') %>%
+        #   spread(var_grp, val, fill = '')
+        # 
+        # ds_df_spl_names = grep("^spl", colnames(ds_df_agg))
+        # ds_df_sd = apply(ds_df_agg[,ds_df_spl_names], 1, FUN = sd, na.rm = TRUE)
+        # ds_df_sd1 = cbind(as.vector(ds_df_agg$Date), as.vector(ds_df_sd))
+        # ds_df_sd1 = as.data.frame(ds_df_sd1)
+        # ds_df_sd1$date = as.Date(ds_df_sd1$V1)
+        # 
+        # 
+        # data_val_sub_agg_sd = try(aggregate(data_val_subset$calc_mean, by=list(data_val_subset$Date), FUN=sd))
+        # data_val_sub_agg_2 = data_val_sub_agg_1
+        # data_val_sub_agg_2$sd = data_val_sub_agg_sd$x[match(data_val_sub_agg_1$Group.1, data_val_sub_agg_sd$Group.1)]
         
         ## usgs width vs usgs discharge points. 
         # points(usgs_q_subset$q,data_val_sub_agg_1$x, pch=17, col="green")
@@ -941,14 +1087,15 @@ for (i in 1:nrow(Site_number_xsections)){
           # try(text(as.numeric(xSecq[4,100]), as.numeric(xSecw[4,100]), xSecID[4]))
           # try(text(as.numeric(xSecq[5,100]), as.numeric(xSecw[5,100]), xSecID[5]))
           #  
-          
+          points(paired_df$calc_mean, paired_df$Q, col = "red")
+          abline(v = Natural_breaks, lwd = 0.25, col = "lightgray")
           poly_bound_mx = cbind(x+w_sd, spl(x))
           poly_bound_mn = cbind(x-w_sd, spl(x))
           
           ##represents error margins from rating curves throughout plot. 
-          polygon(c(poly_bound_mn[,1],  max(poly_bound_mx[,1], na.rm = TRUE), rev(poly_bound_mx[,1]), min(poly_bound_mn[,1], na.rm = TRUE))
-                  ,c(poly_bound_mn[,2],  max(poly_bound_mx[,2], na.rm = TRUE), rev(poly_bound_mx[,2]), min(poly_bound_mn[,2], na.rm = TRUE)),
-                   col = yarrr::transparent("red", trans.val = .95), border = NA)
+          # polygon(c(poly_bound_mn[,1],  max(poly_bound_mx[,1], na.rm = TRUE), rev(poly_bound_mx[,1]), min(poly_bound_mn[,1], na.rm = TRUE))
+          #         ,c(poly_bound_mn[,2],  max(poly_bound_mx[,2], na.rm = TRUE), rev(poly_bound_mx[,2]), min(poly_bound_mn[,2], na.rm = TRUE)),
+          #          col = yarrr::transparent("red", trans.val = .95), border = NA)
           
           
           a=try(lines(x ,spl(x), col = "black", lwd = 2))
@@ -960,8 +1107,26 @@ for (i in 1:nrow(Site_number_xsections)){
           #try(points(dv, data_val_sub_agg_1$x+ spl_sd(data_val_sub_agg_1$x), pch = 17, col = "blue"))
           
           ##new error bars: represent each day sd from landsat withds. 
-          try(arrows(y0 = dv, x0= data_val_sub_agg_1$x - data_val_sub_agg_2$sd, 
-                     y1 = dv, x1 = data_val_sub_agg_1$x + data_val_sub_agg_2$sd, col = "indianred" , 
+          # try(arrows(y0 = dv, x0= data_val_sub_agg_1$x - data_val_sub_agg_2$sd, 
+          #            y1 = dv, x1 = data_val_sub_agg_1$x + data_val_sub_agg_2$sd, col = "indianred" , 
+          #            code=3, angle = 180, length = 0, lwd = 0.5))
+          
+          ##min and max values from paired data. 
+          # try(arrows(y0 = dv - t.apr_mn(data_val_sub_agg_1$x), x0= data_val_sub_agg_1$x, 
+          #            y1 = dv + t.apr_mx(data_val_sub_agg_1$x), x1 = data_val_sub_agg_1$x, col = "indianred" , 
+          #            code=3, angle = 180, length = 0, lwd = 0.5))
+          
+          
+          landsat_df = as.data.frame(data_val_sub_agg_1$x)
+          landsat_df$landsat_mn = t.apr_mn(landsat_df[,1])
+          landsat_df$landsat_mx = t.apr_mx(landsat_df[,1])
+          landsat_df[,1] = dv
+          
+          landsat_df$minimum = apply(landsat_df,1, FUN = min, na.rm = TRUE)
+          landsat_df$maximum = apply(landsat_df,1, FUN = max, na.rm = TRUE)
+          
+          try(arrows(y0 = landsat_df$minimum, x0= data_val_sub_agg_1$x, 
+                     y1 = landsat_df$maximum, x1 = data_val_sub_agg_1$x, col = "indianred" , 
                      code=3, angle = 180, length = 0, lwd = 0.5))
           
           ##old error bars: represent sd of rating curves
@@ -992,7 +1157,8 @@ for (i in 1:nrow(Site_number_xsections)){
           u_l_mn = min(c(u$V1, l$dv), na.rm = TRUE)
           u_l_mx = max(c(u$V1, l$dv), na.rm = TRUE)
           
-          try(plot(c(u_l_mn, u_l_mx), c(u_l_mn, u_l_mx), type = "n", xlab = "In situ Discharge (cms)", ylab = "Landsat Discharge (cms)", main = "In situ vs Landsat"))
+          # try(plot(c(u_l_mn, u_l_mx), c(u_l_mn, u_l_mx), type = "n", xlab = "In situ Discharge (cms)", ylab = "Landsat Discharge (cms)", main = "In situ vs Landsat"))
+          try(plot(c(min(spl(x), na.rm = TRUE), max(spl(x), na.rm = TRUE)),c(min(spl(x), na.rm = TRUE), max(spl(x), na.rm = TRUE)), type = "n", xlab = "In situ Discharge (cms)", ylab = "Landsat Discharge (cms)", main = "In situ vs Landsat"))
           points(u$V1, l$dv, col = "blue")
           abline(1,1)
           #try(plot(u$V1, l$dv, xlab = "In situ Q (cms)", ylab = "Landsat Q (cms)", main = "In situ vs Landsat", asp = 1))
@@ -1163,12 +1329,16 @@ for (i in 1:nrow(Site_number_xsections)){
           usgs_q_2015_wval$sd_mn = usgs_q_2015_wval$landat - usgs_q_2015_wval$sd
           
           ############### new sd. 
-          ds_join = left_join(usgs_q_2015_wval, ds_df_sd1)
-          usgs_q_2015_wval = ds_join
-          usgs_q_2015_wval$V2[mapply(is.na, usgs_q_2015_wval$landat)] = NA
-          usgs_q_2015_wval$V2 = as.numeric(as.character(usgs_q_2015_wval$V2))
-          usgs_q_2015_wval$sd_mx1 = usgs_q_2015_wval$landat + usgs_q_2015_wval$V2
-          usgs_q_2015_wval$sd_mn1 = usgs_q_2015_wval$landat - usgs_q_2015_wval$V2
+          # ds_join = left_join(usgs_q_2015_wval, ds_df_sd1)
+          # usgs_q_2015_wval = ds_join
+          # usgs_q_2015_wval$V2[mapply(is.na, usgs_q_2015_wval$landat)] = NA
+          # usgs_q_2015_wval$V2 = as.numeric(as.character(usgs_q_2015_wval$V2))
+          # usgs_q_2015_wval$sd_mx1 = usgs_q_2015_wval$landat + usgs_q_2015_wval$V2
+          # usgs_q_2015_wval$sd_mn1 = usgs_q_2015_wval$landat - usgs_q_2015_wval$V2
+          # 
+          # usgs_q_2015_wval$sd_mx1 = usgs_q_2015_wval$landat + t.apr_mx(usgs_q_2015_wval$landat)
+          # usgs_q_2015_wval$sd_mn1 = usgs_q_2015_wval$landat - t.apr_mn(usgs_q_2015_wval$landat)
+          
           
           
           ###### insitu vs landsat error updated to new error bars. 
@@ -1177,31 +1347,76 @@ for (i in 1:nrow(Site_number_xsections)){
           in_situ_sd_mn = in_situ_sd$sd_mn1[order(in_situ_sd$q)]
           
           
+          # ####changed the gage_stats sd
+          # gage_stats_col13 = mean(usgs_q_2015_wval$V2)
+          # #gage_stats_col13 = mean(usgs_q_2015_wval$sd, na.rm = TRUE)
+          # gage_stats$std_Q[i] = gage_stats_col13
+          # gage_stats_col14 = sqrt(var(error, na.rm = TRUE))
+          # gage_stats$STDE[i] = gage_stats_col14
+          # mean_q = mean(usgs_q_2015_wval$landat, na.rm = TRUE)
+          # 
+          
+ 
+           try(arrows(x0 = u$V1, y0=  landsat_df$minimum, 
+                      x1 = u$V1, y1 = landsat_df$maximum, col = "indianred",
+                      code=3, angle = 180, length = 0, lwd = 0.5))
+
+          
+          # try(arrows(x0 = in_situ_sd$q[order(in_situ_sd$q)], y0=  in_situ_sd_mn - mean_q, 
+          #            x1 = in_situ_sd$q[order(in_situ_sd$q)], y1 = in_situ_sd_mx + mean_q, col = "indianred",
+          #            code=3, angle = 180, length = 0, lwd = 0.5))
+          
+          try(plot(usgs_q_2015_wval$date, usgs_q_2015_wval$q,ylim = c(min(spl(x), na.rm = TRUE),
+              max(spl(x), na.rm = TRUE)), xlab = "", ylab = "Discharge (cms)", type = "l", col = "lightgray"))
+          
+          try(points(usgs_q_2015_wval$date,usgs_q_2015_wval$landat, col = "blue"))
+          
+          data_val_sub_agg_1$widths = data_val_sub_agg_1$x
+          usgs_q_2015_wval$landsat = usgs_q_2015_wval$landat
+          usgs_joined = left_join(usgs_q_2015_wval, data_val_sub_agg_1, by = "date")
+          
+          ###fix error bars going into negative Q.
+          
+          # landsat_mn = usgs_joined$landsat[!is.na(usgs_joined$landsat)] - t.apr_mn(usgs_joined$widths[!is.na(usgs_joined$landsat)])
+          # landsat_mx = usgs_joined$landsat[!is.na(usgs_joined$landsat)] + t.apr_mx(usgs_joined$widths[!is.na(usgs_joined$landsat)])
+          # 
+          # for(p in 1:length(landsat_mn)){
+          # if(sign(landsat_mn[p])==-1){
+          #   landsat_mn[p] = 0
+          # }}
+          
+          landsat_df = usgs_joined$widths[!is.na(usgs_joined$landsat)]
+          landsat_df = as.data.frame(landsat_df)
+          landsat_df$landsat_mn = t.apr_mn(landsat_df[,1])
+          landsat_df$landsat_mx = t.apr_mx(landsat_df$landsat_df)
+          landsat_df[,1] = usgs_joined$landsat[!is.na(usgs_joined$landsat)]
+          
+          landsat_df$minimum = apply(landsat_df,1, FUN = min, na.rm = TRUE)
+          landsat_df$maximum = apply(landsat_df,1, FUN = max, na.rm = TRUE)
+          
+          
+          try(arrows(x0 = usgs_joined$date[!is.na(usgs_joined$landsat)], y0=  landsat_df$minimum, 
+                     x1 = usgs_joined$date[!is.na(usgs_joined$landsat)], y1 = landsat_df$maximum, col = "indianred",
+                     code=3, angle = 180, length = 0, lwd = 0.5))
+          
+          
+          
+          landsat_diff = landsat_df$maximum - landsat_df$minimum
           ####changed the gage_stats sd
-          gage_stats_col13 = mean(usgs_q_2015_wval$V2)
+          gage_stats_col13 = mean(landsat_diff)
           #gage_stats_col13 = mean(usgs_q_2015_wval$sd, na.rm = TRUE)
           gage_stats$std_Q[i] = gage_stats_col13
           gage_stats_col14 = sqrt(var(error, na.rm = TRUE))
           gage_stats$STDE[i] = gage_stats_col14
           mean_q = mean(usgs_q_2015_wval$landat, na.rm = TRUE)
           
- 
-          
-
-          
-          try(arrows(x0 = in_situ_sd$q[order(in_situ_sd$q)], y0=  in_situ_sd_mn - mean_q, 
-                     x1 = in_situ_sd$q[order(in_situ_sd$q)], y1 = in_situ_sd_mx + mean_q, col = "indianred",
-                     code=3, angle = 180, length = 0, lwd = 0.5))
-          
-          try(plot(usgs_q_2015_wval$date, usgs_q_2015_wval$q, xlab = "", ylab = "Discharge (cms)", type = "l", col = "lightgray"))
-          
-          try(points(usgs_q_2015_wval$date,usgs_q_2015_wval$landat, col = "blue"))
-          
+          sd_vals[i, 1:length(usgs_q_2015_wval$landsat[!is.na(usgs_q_2015_wval$landat)])] = landsat_diff
+          width_vals[i, 1:length(usgs_q_2015_wval$landsat[!is.na(usgs_q_2015_wval$landat)])] = usgs_q_2015_wval$x[!is.na(usgs_q_2015_wval$landat)] 
           
           ##represent errors from determing each Q across all rating curves. Maybe too much? 
-          try(arrows(x0 = usgs_q_2015_wval$date, y0=  usgs_q_2015_wval$sd_mn1 - mean_q, 
-                     x1 = usgs_q_2015_wval$date, y1 = usgs_q_2015_wval$sd_mx1 + mean_q, col = "indianred",
-                     code=3, angle = 180, length = 0, lwd = 0.5))
+          # try(arrows(x0 = usgs_q_2015_wval$date, y0=  usgs_q_2015_wval$sd_mn1 - mean_q, 
+          #            x1 = usgs_q_2015_wval$date, y1 = usgs_q_2015_wval$sd_mx1 + mean_q, col = "indianred",
+          #            code=3, angle = 180, length = 0, lwd = 0.5))
           
           ##old error bars. represent sd from using 5 ind rating curves to determine Q. 
           # try(arrows(x0 = usgs_q_2015_wval$date, y0= usgs_q_2015_wval$sd_mn - mean_q, 
@@ -1210,7 +1425,7 @@ for (i in 1:nrow(Site_number_xsections)){
           
           
           ####change sd vals to new sd. 
-          sd_vals[i, 1:length(usgs_q_2015_wval$V2[!is.na(usgs_q_2015_wval$landat)])] = usgs_q_2015_wval$V2[!is.na(usgs_q_2015_wval$landat)]
+          # sd_vals[i, 1:length(usgs_q_2015_wval$V2[!is.na(usgs_q_2015_wval$landat)])] = usgs_q_2015_wval$V2[!is.na(usgs_q_2015_wval$landat)]
           
           #sd_vals[i, 1:length(usgs_q_2015_wval$sd[!is.na(usgs_q_2015_wval$landat)])] = usgs_q_2015_wval$sd[!is.na(usgs_q_2015_wval$landat)]
           
@@ -1239,7 +1454,9 @@ for (i in 1:nrow(Site_number_xsections)){
           #try(points(spl(usgs[,2]), col = "blue"))
           #try(lines(spl(usgs[,2]), col = "green"))
           
+        }else{next} ## for paired_df. 
           
+        } else{next} ### this one for min df. 
         }
         else{
           next}
@@ -1306,8 +1523,9 @@ norm_rmse = gage_stats$RMSE/Q_df
 norm_bias = abs(gage_stats$Bias)/Q_df
 norm_stde = gage_stats$STDE/Q_df
 
-norm_stde = norm_stde[is.na(Total_gage_stats_dams$dam) & !is.na(Total_gage_stats_dams$Site_number & Total_gage_stats_dams$change<10)]
-
+norm_stde = norm_stde[is.na(gage_stats$dam) & gage_stats$change<10]
+norm_bias = norm_bias[is.na(gage_stats$dam) & gage_stats$change<10]
+norm_rmse = norm_rmse[is.na(gage_stats$dam) & gage_stats$change<10]
 
 plot.new()
 par(mfrow = c(1, 1))
@@ -1329,16 +1547,24 @@ legend("bottomright", legend = c("Normalized Bias", "Normalized STDE", "Normaliz
        col = c("gold", "blue", "forestgreen"), lty = c(1, 1, 1))
 
 ################################################################################################ Estimated Error Metrics. 
-GRADES_b = Q_df * 0.5 #0.2
+GRADES_b = Q_df * 0.2 #0.5
 Total_estimated_error = GRADES_b + sd_vals
+Total_estimated_error = sd_vals
 
 error_estimate = l_vals[!is.na(l_vals)] - sd_vals
 mean_error_estimate = apply(Total_estimated_error, 1, FUN = mean, na.rm = TRUE)
 STDE_estimate = sqrt(apply(Total_estimated_error, 1, FUN = var, na.rm = TRUE))
 STDE_estimate[STDE_estimate==0] = NA
 
+
 rmse_estimate = Total_estimated_error^2
 rmse_estimate = sqrt(apply(rmse_estimate, 1, FUN = mean, na.rm = TRUE))
+
+
+###Converts infinite values to NA. 
+mean_error_estimate[is.infinite(mean_error_estimate)] = NA
+STDE_estimate[is.infinite(STDE_estimate)] = NA
+rmse_estimate[is.infinite(rmse_estimate)] = NA
 
 plot((rmse_estimate), sqrt((STDE_estimate^2) + abs(mean_error_estimate^2))) ### shows proper relationship. They are all calculated consistently. 
 
@@ -1348,14 +1574,17 @@ norm_rmse_est = rmse_estimate/Q_df
 norm_bias_est = abs(mean_error_estimate)/Q_df
 norm_stde_est = STDE_estimate/Q_df
 
-norm_stde_est = norm_stde_est[is.na(Total_gage_stats_dams$dam) & !is.na(Total_gage_stats_dams$Site_number) & Total_gage_stats_dams$change<10]
+norm_stde_est = norm_stde_est[is.na(gage_stats$dam) & gage_stats$change<10]
+norm_rmse_est = norm_rmse_est[is.na(gage_stats$dam) & gage_stats$change<10]
+norm_bias_est = norm_bias_est[is.na(gage_stats$dam) & gage_stats$change<10]
+
 
 
 ############################################################################################### Cedric's plots. Accounting for more Bias. 
 
 plot.new()
 par(mfrow =c(2,2), oma = c(0, 0, 2, 0))
-plot(ecdf(norm_rmse_est), xlim = c(0, 5), col = "forestgreen", main = "Cumulated estimated error metrics", cex.main = 0.8, cex = 0.15)
+plot(ecdf(norm_rmse_est), xlim = c(0, 15), col = "forestgreen", main = "Cumulated estimated error metrics", cex.main = 0.8, cex = 0.15)
 mtext("Estimated error metrics", outer = TRUE, cex = 1.5)
 lines(ecdf(norm_bias_est), col = "gold", cex = 0.15)
 lines(ecdf(norm_stde_est), col = "blue", cex = 0.15)
@@ -1373,7 +1602,7 @@ legend("bottomright", legend = c("Normalized Bias", "Normalized STDE", "Normaliz
 
 bias_mn = min(c(abs(gage_stats$Bias), abs(mean_error_estimate)), na.rm = TRUE)
 bias_mx = max(c(abs(gage_stats$Bias), abs(mean_error_estimate)), na.rm = TRUE)
-plot(c(bias_mn, bias_mx), c(bias_mn, bias_mx), type = "n", log = "xy", xlab = "Q error", ylab = "Q error",
+plot(c(bias_mn, bias_mx), c(bias_mn, bias_mx), type = "n", log = "xy", xlab = "actual Q error", ylab = " estimated Q error",
      main = "Estimated errors as a function of actual errors", cex.main = 0.8)
 points(abs(gage_stats$Bias), abs(mean_error_estimate), col = "gold")
 bias_lm = lm(log(abs(mean_error_estimate))~log(abs(gage_stats$Bias)))
@@ -1390,7 +1619,7 @@ legend("topleft", legend = c("Bias", bias_legend),
 
 stde_mn = min(c(gage_stats$STDE, STDE_estimate), na.rm = TRUE)
 stde_mx = max(c(gage_stats$STDE, STDE_estimate), na.rm = TRUE)
-plot(c(stde_mn, stde_mx), c(stde_mn, stde_mx), type = "n", log = "xy", xlab = "Q error", ylab = "Q error",
+plot(c(stde_mn, stde_mx), c(stde_mn, stde_mx), type = "n", log = "xy", xlab = "actual Q error", ylab = "estimated Q error",
      main = "Estimated errors as a function of actual errors", cex.main = 0.8)
 points(gage_stats$STDE, STDE_estimate, col = "blue")
 #abline(1, 1)
@@ -1408,7 +1637,7 @@ legend("topleft", legend = c("STDE", stde_legend),
 
 rmse_mn = min(c(gage_stats$RMSE, rmse_estimate), na.rm = TRUE)
 rmse_mx = max(c(gage_stats$RMSE, rmse_estimate), na.rm = TRUE)
-plot(c(rmse_mn, rmse_mx), c(rmse_mn, rmse_mx), type = "n", log = "xy", xlab = "Q error", ylab = "Q error",
+plot(c(rmse_mn, rmse_mx), c(rmse_mn, rmse_mx), type = "n", log = "xy", xlab = "actual Q error", ylab = "estimated Q error",
      main = "Estimated errors as a function of actual errors", cex.main = 0.8)
 points(gage_stats$RMSE, rmse_estimate, col = "forestgreen")
 rmse_lm = lm(log(rmse_estimate)~log(gage_stats$RMSE))
@@ -1796,6 +2025,7 @@ gage_stats$lat = gageinfo$LAT[match(gage_stats$Site_number, gageinfo$SITE_NUM)]
 gage_stats$long = gageinfo$LONG[match(gage_stats$Site_number, gageinfo$SITE_NUM)]
 ryan_1 = st_as_sf(gage_stats[!is.na(gage_stats$Site_number),],coords = c("long", "lat"))
 
+rivers = read.shapefile("E:\\research\\MISC\\narivs")
 
 library(tmap)
 data("World")
@@ -1817,13 +2047,14 @@ tm_shape(World[World$name == "United States",]) +
   tm_symbols(col = "Bias", size = "GRWL_width_m", scale = .5, midpoint = NA,breaks = c(-12000, -2000, -500, -250, 0, 250,500, 2000))
 
 
-tm_shape(World[World$name == "United States",]) +
-  tm_polygons() +
-  tm_shape(ryan_1[is.na(ryan_1$dam),])+
-  tm_symbols(col = "RRMSE", size = "GRWL_width_m", scale = .5, midpoint = NA,breaks = c(0, 50, 70, 100, 3000)
-)
 
+  tm_shape(ryan_1)+
+  tm_symbols(col = "RRMSE", size = "GRWL_width_m",scale = .5, midpoint = NA,breaks = c(0, 50, 75, 100)+
+  tm_shape(basins) +
+  tm_polygons()
+             )
 
+basins_gauges = st_as_sf(gauge_basins_df, coords = c("long", "lat"))
 
 
 
