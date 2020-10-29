@@ -36,21 +36,92 @@ Eff_widths = vroom(list.files("E:\\research\\GRWL\\GRWL_2015_present\\East_west_
 ##More in depth_polygon on 30 gauges. 2 km. 
 Eff_widths = vroom(list.files("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Effective_widths\\Subset\\Trials\\in_depth_polygon\\2km", full.names = TRUE))
 
+##More in depth_polygon on 30 gauges. 500 m. 
+Eff_widths = vroom(list.files("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Effective_widths\\Subset\\Trials\\in_depth_polygon\\500m", full.names = TRUE))
+
+##Buffered method. 
+Eff_widths = vroom(list.files("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Effective_widths\\Subset\\Trials\\Buffered", full.names = TRUE))
+
+##Buffered method with change and flags on 30 gauges. 
+Eff_widths = map_df(list.files("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Effective_widths\\Subset\\Trials\\Buffered_grwlCline_flags", full.names = TRUE), ~vroom(.x))
+
+##Buffered method with change and flags on all USGS gauges. 
+Eff_widths = map_df(list.files("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Effective_widths\\All_gauges_buff_filt", full.names = TRUE), ~vroom(.x))
+
+##### Candada
+##Read in Gage data. 
+gageinfo = read.csv("E:\\research\\GRDC\\Canada_stationid_filtered_lakes_widths.csv")
+gageinfo = gageinfo[gageinfo$GRWL_width>99,]
+Eff_widths = map_df(list.files("E:\\research\\GRWL\\GRWL_2015_present\\Canada_validation\\Effective_widths\\widths", full.names = TRUE), ~vroom(.x))
+gageinfo$SITE_NUM = gageinfo$Station_Num
 
 
+
+##Date processing with landsat 7
 Eff_widths = as.data.frame(Eff_widths)
-Eff_widths$system.index = Eff_widths$`system:index` 
+Eff_widths$system.index = Eff_widths$`system:index`
 Eff_widths$system.index = gsub("^[[:digit:]]_", "", Eff_widths$system.index)
-Eff_widths$system.index = substr(Eff_widths$system.index, 0, 20)
-d_dates = str_sub(Eff_widths$system.index, start = -8)
+Eff_widths$system.index = substr(Eff_widths$system.index, 0, 22)
+d_dates = str_sub(Eff_widths$system.index, start = -8) ##was -8
 d_date = as.Date(d_dates, format = "%Y%m%d")
 Eff_widths$Date = d_date
 
-data = distinct(Eff_widths, ID, .keep_all = TRUE)
+#Eff_widths$COMID = Eff_widths$COMID0
+
+###Filter out flags
+Eff_widths = Eff_widths[Eff_widths$Difference==0,]
+
+##Filter out NA DATES to figure out what the error is. 
+Dates_error = Eff_widths[is.na(Eff_widths$Date),]
+Eff_widths = Eff_widths[!is.na(Eff_widths$Date),]
+Dates_error$system.index = Dates_error$`system:index`
+Dates_error$system.index = gsub("^[[:digit:]]_", "", Dates_error$system.index)
+
+Dates_error$system.index = substr(Dates_error$system.index, 0, 25)
+d_dates = str_sub(Dates_error$system.index, start = -8) ##was -8
+d_date = as.Date(d_dates, format = "%Y%m%d")
+Dates_error$Date = d_date
+
+binded = rbind(Eff_widths, Dates_error)
+bind_na = binded[is.na(binded$Date),]
+
+for(i in 1:nrow(bind_na)){
+  if(stringr::str_detect(bind_na$`system:index`[i], "^[[:digit:]]_[[:digit:]]_", negate = TRUE)){
+    bind_na$`system:index`[i] = paste("1_", bind_na$`system:index`)
+  }
+}
+
+d_dates = str_sub(bind_na$id, start = -10) ##was -8
+d_dates = str_sub(d_dates, end = 8)
+d_date = as.Date(d_dates, format = "%Y%m%d")
+bind_na$Date = d_date
+
+Eff_total = rbind(Eff_widths, bind_na)
+Eff_widths = Eff_total
+all(!is.na(Eff_widths$Date))
+test = Eff_widths[Eff_widths$Date> as.Date("2014-12-31"),]
+
+
+###################################################For subsetted data. 
+Eff_widths = as.data.frame(Eff_widths)
+Eff_widths$system.index = Eff_widths$`system:index`
+Eff_widths$system.index = gsub("^[[:digit:]]_", "", Eff_widths$system.index)
+Eff_widths$system.index = substr(Eff_widths$system.index, 0, 20)
+d_dates = str_sub(Eff_widths$system.index, start = -8) ##was -8
+d_date = as.Date(d_dates, format = "%Y%m%d")
+Eff_widths$Date = d_date
+
+data = distinct(test, ID, .keep_all = TRUE)
 tab = data
 Lat_lon_df = read.csv("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\NA_quantiles_combined.csv")
-data$lon_dd = Lat_lon_df$lon_dd[match(data$ID, Lat_lon_df$ID_2)]
-data$lat_dd= Lat_lon_df$lat_dd[match(data$ID, Lat_lon_df$ID_2)]
+Lat_lon_df = read.dbf("E:\\research\\GRWL\\Subset_GRWL_1spc\\NA_100m_min\\na_sj_using_R_min_100.dbf")
+Lat_lon_df = as.data.frame(Lat_lon_df)
+data$GRWL_width_m = Lat_lon_df$dbf.width_m[match(data$ID, Lat_lon_df$dbf.ID_2)]
+data$lon_dd = Lat_lon_df$dbf.lon_dd[match(data$ID, Lat_lon_df$dbf.ID_2)]
+data$lat_dd= Lat_lon_df$dbf.lat_dd[match(data$ID, Lat_lon_df$dbf.ID_2)]
+tab = data
+rm(Lat_lon_df)
+
 ################################################################################################################
 area_files = list.files("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Effective_widths\\Quantiles\\Area\\Area")
 length_files = list.files("E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Effective_widths\\Quantiles\\Lengths\\Lengths")
@@ -169,6 +240,7 @@ Site_number_distances=cbind(gageinfo$SITE_NUM, distanceDF)
 gage_filter = Site_number_distances[,(nGRWL+1)] < 500
 
 Site_number_xsections = Site_number_xsections[gage_filter,]
+
 
 wd_GRADES =setwd("E:\\research\\GRADES\\percentiles_1_gauges\\")
 COMID_files = list.files(wd_GRADES)
@@ -354,11 +426,15 @@ start = as.Date("1979-01-01")
 
 data_val = Eff_widths
 
+RC_End = as.Date("2014-12-31")
+RC_year = format(RC_End, "%Y")
+RC_year_1 = format(RC_End+1, "%Y")
+
 data_val$ID = data_val$ID
 data_val$ID_2 = data_val$ID
 data_val$calc_mean = data_val$Effective_width
-data_val_8415 = data_val[data_val$Date<as.Date("2015-01-01"),]
-data_val_1520 = data_val[data_val$Date>as.Date("2014-12-31"),]
+data_val_8415 = data_val[data_val$Date< (RC_End +1),] ##Changed from 2015-01-01
+data_val_1520 = data_val[data_val$Date> RC_End,] ##Changed from 2014-12-31
 data_val = data_val_1520
 data_val$Date = as.character(data_val$Date)
 
@@ -383,7 +459,7 @@ xSecIDcol=grep("V", names(Site_number_xsections))
 mInd = array(5, dimnames = NULL)
 rangedf_1 = as.data.frame(matrix(numeric(), nrow = 1, ncol = 4))
 
-gage_stats = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 20))
+gage_stats = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 22))
 gage_stats_GRADES = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 14))
 colnames(gage_stats_GRADES)= c("Site_number", "GRWL_width_m","n_Landsat_obs","R_2", "R", "RMSE", "p_val","Bias", "RRMSE", "avg_std", "change", 'RRMSE_median', "std_Q", "STDE")
 as.data.frame(gage_stats_GRADES)
@@ -392,8 +468,13 @@ u_vals = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol
 sd_vals = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 20))
 width_vals = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 20))
 
+gage_quants_q = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 100))
+gage_quants_w = as.data.frame(matrix(numeric(), nrow =nrow(Site_number_xsections), ncol = 100))
+
+
+
 colnames(gage_stats)= c("Site_number", "GRWL_width_m","n_Landsat_obs","R_2", "R", "RMSE", "p_val","Bias", "RRMSE","avg_std", "change", "RRMSE_median", "std_Q","STDE", "KGE", "NSE", "rBias",
-                        "SDRR", "MRR", "NRMSE")
+                        "SDRR", "MRR", "NRMSE", "Q_50", "W_50")
 as.data.frame(gage_stats)
 gage_stats_col1 = as.vector(1)
 gage_stats_col2 = as.vector(1)
@@ -408,6 +489,7 @@ width_grouping = 60
 
 for (i in 1:nrow(Site_number_xsections)){
   print(i)
+  
   #for (j in 1:(ncol(Site_number_xsections))){
   xSecIDcol = Site_number_xsections[i,]
   ##if you uncomment the next two lines it will only produce the gages with 5 lines. Only 4 plots produced. 
@@ -417,7 +499,7 @@ for (i in 1:nrow(Site_number_xsections)){
   
   #print(xSecID)
   #[xSecIDcol==Site_number_xsections[i,2:6]]
-  mInd = match(xSecID, tab$ID)
+  mInd = match(xSecID, data$ID) #changed from tab
   
   #xSecw=wTab[mInd,] ##Commented out to quickly do paired method. 
   #xSecq=qTab[mInd,] ##Commented out to quickly do paired method. 
@@ -428,6 +510,7 @@ for (i in 1:nrow(Site_number_xsections)){
   #xSecq = xSecq[,11:91]
   mInd_paired = which(data_val_8415$ID %in% xSecID)
   paired_df = data_val_8415[mInd_paired,]
+ 
   # try(if(regmatches(unique(paired_df$COMID), regexpr("\\d", unique(paired_df$COMID))) == 7){
   # Q_df = nc_function(unique(paired_df$COMID))}
   # else{Q_df = nc_function_8(unique(paired_df$COMID)[1])})
@@ -435,12 +518,37 @@ for (i in 1:nrow(Site_number_xsections)){
   
   
   if(nrow(paired_df)>0){
+    pdf_comid = grep("COMID", names(paired_df))
+    pdf_filtering = unique(paired_df[,pdf_comid])
+    list = na.omit(unlist(pdf_filtering))
+    testing_df = as.vector(as.numeric(length(list)))
+    for(l in 1:length(list)){
+      paired_df$COMID = list[l]
+      joining = try(left_join(paired_df, Gauge_comid, by = c("COMID" = "COMID", "Date" = "date")))
+      testing_df[l] = mean(joining$Q, na.rm = TRUE)
+    }
+    place = as.data.frame(cbind(testing_df, list))
+    if(all(is.na(place$testing_df))){next} else{
+    placement = place$list[place$testing_df==max(place$testing_df, na.rm = TRUE)]
+    paired_df$COMID = placement
+    }
+    ##old stuff starts here. 
     paired_df = try(left_join(paired_df, Gauge_comid, by = c("COMID" = "COMID", "Date" = "date")))
     if(all(is.na(paired_df$Q))){next}
     #paired_df = try(aggregate(cbind(calc_mean, Q)~Date+COMID, paired_df,mean))
     #t.spl = approxfun(paired_df$calc_mean, paired_df$Q)
-    p_q = try(quantile(paired_df$Q, probs = seq(0,1,.01), na.rm = TRUE))
-    p_w = try(quantile(paired_df$calc_mean, probs = seq(0,1,.01), na.rm = TRUE))
+    p_q = try(quantile(paired_df$Q, probs = seq(0.05,.95,.01), na.rm = TRUE))
+    p_w = try(quantile(paired_df$calc_mean, probs = seq(0.05,.95,.01), na.rm = TRUE))
+    
+    l_q = length(p_q)
+    l_w = length(p_w)
+    
+    gage_quants_q[i,1:l_q] = p_q
+    gage_quants_w[i,1:l_w] = p_w
+    
+    
+    #p_q = try(quantile(paired_df$Q, probs = seq(0,1,.01), na.rm = TRUE))
+    #p_w = try(quantile(paired_df$calc_mean, probs = seq(0,1,.01), na.rm = TRUE))
     
     #pd_l = t.apr(min(paired_df$calc_mean):max(paired_df$calc_mean))
     # t.apr_mx = try(approxfun(paired_df$calc_mean, paired_df$Q, ties = max))
@@ -479,7 +587,10 @@ for (i in 1:nrow(Site_number_xsections)){
       # t.apr_mn = try(approxfun(paired_df$calc_mean, paired_df$Q, method = "constant", rule = 1, f = 0,ties = min))
       
       t.apr_mx = try(approxfun(natural_breaks_df$Natural_breaks, natural_breaks_df$max, method = "constant", rule = 2, f = 1,ties = max))
+      if(!is.error(t.apr_mx)){
+      
       t.apr_mn = try(approxfun(natural_breaks_df$Natural_breaks, natural_breaks_df$min, method = "constant", rule = 2, f = 1,ties = max))
+      } else{next}
       # plot(paired_df$calc_mean, paired_df$Q)
       # for(i in 1:nrow(paired_df[order(paired_df$Q),])){
       #   points(paired_df$calc_mean[i], min(t.apr_mn(paired_df$calc_mean[i-2:i+2]), na.rm = TRUE), col = "blue")
@@ -512,7 +623,7 @@ for (i in 1:nrow(Site_number_xsections)){
       # if(!is.error(data_val_subset)){
       #  data_val_subset$calc_mean = data_val_subset$calc_mean + 21}
       data_val_sub_agg = try(aggregate(data_val_subset$calc_mean, by=list(data_val_subset$Date), FUN=mean))
-      if(!is.na(rangedf_1)){
+      if(!is.na(rangedf_1) & !is.error(data_val_sub_agg)){
         #par(mfrow = c(1, 2))
         # par(mfrow =c(2, 2), mar = c(4, 4, 5, 4))
         # layout(matrix(c(1,1,1,1,1,0,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3), 2, 11, byrow = TRUE))
@@ -616,23 +727,32 @@ for (i in 1:nrow(Site_number_xsections)){
         #        horiz = F)
         #inset = c(0.9, 0.25)
         
-        usgs = try(usgs_processing(read.csv(trial[i])))
+        #usgs = try(usgs_processing(read.csv(trial[i])))
         
         ##if above line works then add in the usgs width/discharge information. if the usgs data is missing then skip this step. 
-        if(!is.error(usgs)){
-          
-          
-          ###get percentile USGS discharge and width values and plot them. 
-          u=as.data.frame(usgs)
-          u$Group.1 = as.character(u$V3)
-          usgs_widths_landsat = right_join(u, data_val_sub_agg)
-        }
+        # print("Widths are the error")
+        # if(!is.error(usgs)){
+        #   
+        #   
+        #   ###get percentile USGS discharge and width values and plot them. 
+        #   u=as.data.frame(usgs)
+        #   u$Group.1 = as.character(u$V3)
+        #   usgs_widths_landsat = right_join(u, data_val_sub_agg)
+        # }
+        # 
           #try(plot(usgs_widths_landsat$V3, usgs_widths_landsat$x))
           
           #u_w_q = try(quantile(u$w_m, probs = seq(0, 1, .01), na.rm = TRUE))
           #u_q_q = try(quantile(u$q_cms, probs = seq(0, 1, .01), na.rm = TRUE))
           #try(lines(u_q_q,u_w_q,type = "l", lty = 2, col = "red"))
-          usgs_q = try(usgs_q_processing(read.csv(usgs_q_list[i], stringsAsFactors = FALSE)))
+        ###usgs_q = try(usgs_q_processing(read.csv(usgs_q_list[i], stringsAsFactors = FALSE))) ##Usgs Make a switch for USGS vs Canadian. 
+        
+        
+          usgs_q = try(read.table(usgs_q_list[i], stringsAsFactors = FALSE)) ##GRDC
+          usgs_q$V1 = substr(usgs_q$V1, 0, 10)
+          usgs_q$datetime = usgs_q$V1
+          usgs_q$q = as.numeric(usgs_q$V2)
+          
           
           if(!is.error(data_val_sub_agg) & !is.error(usgs_q)){
             usgs_q_ind=which(usgs_q$datetime %in% data_val_sub_agg$Group.1)
@@ -723,6 +843,7 @@ for (i in 1:nrow(Site_number_xsections)){
             
             ###calculate and add pearsons correlation (R) to plot. 
             pearson = try(cor.test(u$V1, l$dv, method = "pearson"))
+            
             r = try(pearson$estimate)
             rlabel = try(bquote(italic(R) == .(format(r, digits = 3))))
             if(!is.error(r)){
@@ -770,7 +891,7 @@ for (i in 1:nrow(Site_number_xsections)){
               #try(lines(x+w_sd, spl(x), col = "red"))
               #try(lines(x - w_sd, spl(x), col = "red"))
               #points(data_val_sub_agg_1$x,usgs_q_subset$q, pch=17, col="green")
-              try(points(usgs[,2], usgs[,1], col = "lightgray", lwd = 0.5))
+              #try(points(usgs[,2], usgs[,1], col = "lightgray", lwd = 0.5)) ##USGS Widths
               try(points(data_val_sub_agg_1$x,dv,pch = 1, col = "blue"))
               #try(points(dv, data_val_sub_agg_1$x+ spl_sd(data_val_sub_agg_1$x), pch = 17, col = "blue"))
               
@@ -833,8 +954,20 @@ for (i in 1:nrow(Site_number_xsections)){
               #location = plotrix::emptyspace(x,y)
               
               
+              # legend(location,
+              #        legend = c("Rating curve (1984-2014)","Landsat widths (2015-2020)",
+              #                   "USGS widths"), 
+              #        col = c("black", "blue",
+              #                "lightgray"),
+              #        lty=c(1, NA, NA),
+              #        lwd = c(2, NA, NA),
+              #        pch = c(NA, 01, 01), 
+              #        bty = "n", 
+              #        text.col = "black", 
+              #        horiz = FALSE, cex = 0.6)
+              
               legend(location,
-                     legend = c("Rating curve (1984-2014)","Landsat widths (2015-2020)",
+                     legend = c(paste("Rating curve (1984-", RC_year, ")", sep = ""),paste("Landsat widths (", RC_year_1, "-2020)", sep = ""),
                                 "USGS widths"), 
                      col = c("black", "blue",
                              "lightgray"),
@@ -844,8 +977,6 @@ for (i in 1:nrow(Site_number_xsections)){
                      bty = "n", 
                      text.col = "black", 
                      horiz = FALSE, cex = 0.6)
-              
-              
               
               
               u_l_mn = min(c(u$V1, l$dv), na.rm = TRUE)
@@ -871,7 +1002,9 @@ for (i in 1:nrow(Site_number_xsections)){
               gage_stats_col9 = w_sd_avg
               gage_stats$avg_std[i] = gage_stats_col9
               # gage_stats_col10 = mean(abs(tab$change[mInd]))
-              # gage_stats$change[i] = gage_stats_col10
+              gage_stats$change[i] = paired_df$change[1]
+              gage_stats$Q_50[i] = p_q[50]
+              gage_stats$W_50[i] = p_w[50]
             } else{next}
             
             ###calculate and add spearmans coefficient (p) to plot. 
@@ -943,7 +1076,7 @@ for (i in 1:nrow(Site_number_xsections)){
               gage_stats_col6 = bias
               gage_stats$Bias[i] = gage_stats_col6
               #gage_stats_col8 = tab$width_m[mInd]
-              #gage_stats$GRWL_width_m[i] = gage_stats_col8
+              gage_stats$GRWL_width_m[i] = data$GRWL_width_m[mInd]
               } else{next}
             #l_df = data.frame(l$dv)
             # comb = cbind(l$dv, u$V1)
@@ -963,7 +1096,7 @@ for (i in 1:nrow(Site_number_xsections)){
               ##add in date field to usgs data and filter to 2015- present.  
               usgs_q$date = as.Date(usgs_q$datetime, "%Y-%m-%d")
               usgs_q_2015 = usgs_q %>%
-                filter(usgs_q$date > as.Date('2015-01-01') & usgs_q$date < as.Date('2020-12-31'))
+                filter(usgs_q$date > (RC_End+1) & usgs_q$date < as.Date('2020-12-31'))
               
               
               ##add in date field to validation data and assign to corresponding usgs days.
@@ -1169,7 +1302,7 @@ for (i in 1:nrow(Site_number_xsections)){
               
               
               #try(plot(smooth.spline(na.omit(dv), spar = 0.3), ylim = c(q_min_plot, q_max_plot), type = "l", xlab = "2015-Present", ylab = "Q (cms)", xaxt = 'n', main = "Hydrograph 2015-Present",col= "red"))
-              title("Hydrograph 2015-2020", line = 0.5)
+              title(paste("Hydrograph ", RC_year_1, "-2020", sep = ""), line = 0.5)
               
               
               #par(new = TRUE)
@@ -1218,6 +1351,21 @@ system(cmd)
 
 gage_stats$dams = gage_regulation_usgs$distance[match(gage_stats$Site_number, gage_regulation_usgs$stationid)]
 
+filtering = !is.na(gage_stats$Site_number) & gage_stats$change<10 & gage_stats$n_Landsat_obs >5# & is.na(gage_stats$dams)
+nrow(gage_stats[filtering,])
+apply(gage_stats[filtering,], 2, median, na.rm = TRUE)
+
+
+gage_stats_all = gage_stats
+gage_stats_index = gage_stats_all==filtering
+
+gage_stats = gage_stats[filtering, ]
+
+l_vals = l_vals[as.numeric(rownames(gage_stats)),]
+u_vals = u_vals[as.numeric(rownames(gage_stats)), ]
+sd_vals = sd_vals[as.numeric(rownames(gage_stats)),]
+
+write.csv(gage_stats, "E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Effective_widths\\All_gauges_buff_filt_stats\\USGS\\Stats_0595_8410.csv")
 
 plot.new()
 par(mfrow =c(1,1))
@@ -1242,9 +1390,27 @@ error_df = apply(e_df, 1, FUN = mean, na.rm = TRUE)
 
 relative_residuals = e_df/u_vals
 ######################################################################################### RRMSE vs SDRR/MRR
+
+##Different from above because these are absolutes!!!!!!!!!!!!!!!!!!!!!!!!. 
 plot(ecdf(abs(gage_stats$SDRR)), col = "red", xlim = c(0, 100), main = "")
 lines(ecdf(abs(gage_stats$MRR)), col = "blue")
 lines(ecdf(abs(gage_stats$RRMSE)), col = "forestgreen")
+
+
+plot(quantile(abs(gage_stats$SDRR), probs = seq(0, 1, .01)),0:100, col = "red", main = "")
+lines(quantile(abs(gage_stats$MRR), probs = seq(0, 1, .01)),0:100, col = "blue")
+lines(quantile(abs(gage_stats$RRMSE), probs = seq(0, 1, .01)),0:100, col = "green")
+abline(h = 50)
+
+lines(ecdf(abs(gage_stats$MRR)), col = "blue")
+lines(ecdf(abs(gage_stats$RRMSE)), col = "forestgreen")
+
+
+
+
+
+
+
 
 gage_stats = gage_stats[!is.na(gage_stats$Site_number),]
 
@@ -1262,7 +1428,7 @@ lines(abs(gage_stats$MRR[order(abs(gage_stats$MRR))]),(1:n)/n, type = "l", col =
 ########################################################################################## Avg. Model Q for each Gauge.
 
 Q_df = apply(l_vals, 1, FUN = mean, na.rm = TRUE)
-
+Q_df = Q_df[as.numeric(rownames(gage_stats))]
 
 ########################################################################################## Actual cumulative error statistics across all gauges for entire timeperiod. 
 norm_rmse = gage_stats$RMSE/Q_df
@@ -1520,13 +1686,39 @@ occ_gage_stats$NSE = NSE_df$V1
 
 
 
+##############################################################
+##Figure out how to create a .shp file of gauges with rating curve information
+
+Q_cols_new = paste("Q", seq(1, 100, 1), sep = "")
+
+W_cols_new = paste("W", seq(1, 100, 1), sep = "")
+
+colnames(gage_quants_q) = Q_cols_new
+colnames(gage_quants_w) = W_cols_new
+
+q = cbind(Site_number_xsections$`gageinfo$SITE_NUM`,gage_quants_q)
+w = cbind(Site_number_xsections$`gageinfo$SITE_NUM`,gage_quants_w)
 
 
+row.has.na <- apply(q[,2:ncol(q)], 1, function(x){all(is.na(x))})
+q_filter = q[!row.has.na,]
+w_filter = w[!row.has.na,]
+
+colnames(q_filter)[1] = "Sttn_Nm"
+colnames(w_filter)[1] = "Sttn_Nm"
 
 
+Canadian_gauge_shp = st_read("E:\\research\\GRDC\\Canada_100m_stationid.shp")
+
+Can_filter = Canadian_gauge_shp[which(Canadian_gauge_shp$Sttn_Nm %in% q_filter[,1]),]
+
+Can_filter = Can_filter%>% select(Sttn_Nm, geometry)
+
+q_test = left_join(q_filter, Can_filter)
+w_test = left_join(w_filter, Can_filter)
 
 
-
+st_write(w_test, "E:\\research\\GRWL\\GRWL_2015_present\\Canada_validation\\Effective_widths\\Stats\\w_curve.shp")
 
 
 
@@ -1597,7 +1789,11 @@ tmap_mode("view")
 
 
 tm_shape(ryan1)+
-tm_symbols(col = "RRMSE", size = "GRWL_width_m",scale = .5, midpoint = NA,breaks = c(0, 50, 75, 100), palette = "Set1")
+tm_symbols(col = "RRMSE", size = "W_50",scale = .5, midpoint = NA,breaks = c(0, 50, 75, 100), palette = "Set1")
+
+tm_shape(ryan1)+
+  tm_symbols(col = "R",scale = .5,breaks = c(-1, 0, 0.4,0.7, 1), midpoint = NA, palette = "Set1")
+
 
 
 tm_shape(ryan1)+
@@ -1652,3 +1848,31 @@ for(i in 1:nrow(l_vals)){
 }
 
 median(RRMSE_df$V1[gage_stats$change<10 & is.na(gage_stats$dams)], na.rm = TRUE)
+
+
+
+##Determine which gauges have data post 2015. 
+Sites_post_2015 = as.data.frame(matrix(numeric(), nrow = length(usgs_q_list), ncol = 1))
+
+for(i in 1:length(usgs_q_list)){
+  a = try(read.csv(usgs_q_list[i]))
+  if(!is.error(a)){
+  a$datetime = as.Date(as.character(a$datetime), "%Y-%m-%d")
+  b = a[a$datetime>as.Date("2014-12-31"),]
+  c = nrow(b)
+  Sites_post_2015[i,1] = c
+  
+}
+  }
+
+Sites_comb = cbind(Sites_post_2015$V1, Gages_char)
+Sites_comb_filt = Sites_comb[Sites_comb[,1]>1 & !is.na(Sites_comb[,1]),]
+
+Sites_comb_filt = as.data.frame(Sites_comb_filt)
+Sites_comb_filt$Gages_char_1 = paste(Sites_comb_filt$Gages_char, ",", sep = "")
+Sites_comb_filt$V1 = as.character(Sites_comb_filt$Gages_char)
+gageinfo$SITE_NUM = as.character(gageinfo$SITE_NUM)
+Sites_comb_filt$width_m = gageinfo$GRWL_width[match(Sites_comb_filt$Gages_char, gageinfo$SITE_NUM)]
+
+
+write.csv(Sites_comb_filt, "E:\\research\\GRWL\\GRWL_2015_present\\East_west_together\\Effective_widths\\Gauges_Q_post_2015.csv")
