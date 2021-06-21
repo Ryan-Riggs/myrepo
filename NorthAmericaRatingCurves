@@ -1,0 +1,405 @@
+library(parallel)
+library(foreach)
+
+cl <- parallel::makeCluster(6)
+doParallel::registerDoParallel(cl)
+foreach(r = 16:200) %dopar%{
+part = r
+library(sf)
+library(geosphere)
+library(tidyverse)
+library(sf)
+library(sp)
+library(ggplot2)
+library(rgeos)
+library(dplyr)
+library(gmt)
+library(vroom)
+library(BAMMtools)
+library(hydroGOF)
+library(data.table)
+library(parallel)
+library(foreach)
+library(tidync)
+
+if (!"foreign" %in% rownames(installed.packages())){
+  install.packages("foreign")}; require(foreign)
+if (!"rgdal" %in% rownames(installed.packages())){
+  install.packages("rgdal")}; require(rgdal)
+if (!"shapefiles" %in% rownames(installed.packages())){
+  install.packages("shapefiles")}; require(shapefiles)
+if (!"RColorBrewer" %in% rownames(installed.packages())){
+  install.packages("RColorBrewer")}; require(RColorBrewer)
+if (!"zyp" %in% rownames(installed.packages())){
+  install.packages("zyp")}; require(zyp)
+
+files = list.files("E:\\research\\RODEO\\VariableBuffers\\6xLength3xWidth\\NA_widths\\VariableBuffers_3xLength_1.5Width_Publication1\\VariableBuffers_3xLength_1.5Width_Publication", full.names = TRUE)
+
+n = length(files)
+
+numb = seq(1:100)
+
+chunks = rep(numb, 500)
+if(length(chunks>length(files))){
+  diff = length(chunks) - length(files)
+  end = length(chunks)-diff
+  chunks = chunks[1:end]
+}
+
+# for(r in 1:100){
+# part = r
+# numb = seq(1:100)
+# files = list.files("E:\\research\\RODEO\\VariableBuffers\\6xLength3xWidth\\NA_widths\\VariableBuffers_3xLength_1.5Width_Publication1\\VariableBuffers_3xLength_1.5Width_Publication", full.names = TRUE)
+# 
+# chunks = rep(numb, 500)
+# if(length(chunks>length(files))){
+#   diff = length(chunks) - length(files)
+#   end = length(chunks)-diff
+#   chunks = chunks[1:end]
+# }
+
+
+
+outPath = "E:\\research\\RODEO\\VariableBuffers\\6xLength3xWidth\\outputs\\"
+
+files1 = files[chunks==part]
+#Eff_widths = Eff_widths[chunks ==part,]
+
+
+all_txt <- rbindlist(mapply(
+  c,
+  (
+    files1%>%
+      lapply(
+        fread)
+  ),
+  (
+    files1%>%
+      basename() %>%
+      as.list()
+  ),
+  SIMPLIFY = FALSE
+),
+fill = T)
+
+
+all_txt = all_txt[all_txt$cloud<=10&all_txt$Difference==0,]
+print("hello")
+Eff_widths = as.data.frame(all_txt)
+rm(all_txt)
+t = Eff_widths$V1
+t = gsub("Gauge__","", t)
+t = gsub(".csv", "", t)
+Eff_widths$Sttn_Nm = as.numeric(t)
+rm(t)
+###Process width values. 
+Eff_widths = as.data.frame(Eff_widths)
+Eff_widths$Date = as.Date(as.POSIXct(Eff_widths$`system:time_start`/1000, origin = "1970-01-01"))
+all(!is.na(Eff_widths$Date))
+Eff_widths = Eff_widths[Eff_widths$cloud<=10&Eff_widths$Difference==0,]
+Eff_widths = data.table(Eff_widths)
+setkey(Eff_widths, ID)
+Eff_widths$Date = as.Date(as.POSIXct(Eff_widths$`system:time_start`/1000, origin = "1970-01-01"))
+all(!is.na(Eff_widths$Date))
+all_widths = Eff_widths
+Eff_widths = data.table(Eff_widths)
+
+#rm(files)
+#rm(files1)
+
+
+#write.csv(combined, "E:\\research\\RODEO\\RawWidths\\allWidths_wDates.csv")
+
+comidCols = grep("COMID", colnames(Eff_widths))
+Eff_widths = as.data.frame(Eff_widths)
+uniqueComid = unique(na.omit(unlist(Eff_widths[,comidCols])))
+
+uniqueComid7 = uniqueComid[grep("^7", uniqueComid)]
+uniqueComid8 = uniqueComid[grep("^8", uniqueComid)]
+
+uniqueComid = uniqueComid7
+
+library(ncdf4)
+
+# read in netCDF file:
+ncIn = nc_open("E:\\research\\GRADES\\GRADES_Q_v01_pfaf_07_19790101_20131231.nc")
+allComid = ncvar_get(ncIn, "COMID")
+
+roi = allComid%in%uniqueComid
+
+start = 1
+end = ncIn$var$Q$varsize[2]
+
+j = 1
+interval  = 50 
+year = interval # assuming no leap years
+
+output=list()
+while (start < end){
+  
+  print(paste("chunk", j))
+  
+  #print("reading in nc file...")
+  
+  # for last year: 
+  if ((start+interval) > ncIn$var$Q$varsize[2]){
+    interval = ncIn$var$Q$varsize[2] - start
+  }
+  
+  # start_time = Sys.time()
+  nc = ncvar_get(ncIn, "Q", 
+                 start=c(1, start), # starting index of netCDF to read in 
+                 count=c(ncIn$var$Q$varsize[1], interval)) # ending index of netCDF to read in 
+  nc = cbind(allComid, nc)
+  timeSeries = seq(start, start +interval-1,1)
+  
+  nc_filt = nc[roi,]
+  nc_filt = as.data.frame(nc_filt)
+  colnames(nc_filt) = c("comid", timeSeries)
+  
+  
+  tall = melt(nc_filt, id.var ="comid")
+  #nc_filt = as.data.frame(nc_filt)
+  #nc_filt = rbind(nc_filt, timeSeries)
+  #output[start:start+interval-1,] = nc_filt
+  output[[j]] = tall
+  
+  start = start+interval
+  j = j+1
+  
+}
+out7 = rbindlist(output)
+
+uniqueComid = uniqueComid8
+
+library(ncdf4)
+
+# read in netCDF file:
+ncIn = nc_open("E:\\research\\GRADES\\GRADES_Q_v01_pfaf_08_19790101_20131231.nc")
+allComid = ncvar_get(ncIn, "COMID")
+
+roi = allComid%in%uniqueComid
+
+start = 1
+end = ncIn$var$Q$varsize[2]
+
+j = 1
+interval  = 50 
+year = interval # assuming no leap years
+
+output=list()
+while (start < end){
+  
+  print(paste("chunk", j))
+  
+  #print("reading in nc file...")
+  
+  # for last year: 
+  if ((start+interval) > ncIn$var$Q$varsize[2]){
+    interval = ncIn$var$Q$varsize[2] - start
+  }
+  
+  # start_time = Sys.time()
+  nc = ncvar_get(ncIn, "Q", 
+                 start=c(1, start), # starting index of netCDF to read in 
+                 count=c(ncIn$var$Q$varsize[1], interval)) # ending index of netCDF to read in 
+  nc = cbind(allComid, nc)
+  timeSeries = seq(start, start +interval-1,1)
+  
+  nc_filt = nc[roi,]
+  nc_filt = as.data.frame(nc_filt)
+  colnames(nc_filt) = c("comid", timeSeries)
+  
+  
+  tall = melt(nc_filt, id.var ="comid")
+  #nc_filt = as.data.frame(nc_filt)
+  #nc_filt = rbind(nc_filt, timeSeries)
+  #output[start:start+interval-1,] = nc_filt
+  output[[j]] = tall
+  
+  start = start+interval
+  j = j+1
+  
+}
+out8 = rbindlist(output)
+out = bind_rows(out7, out8)
+Gauge_comid = out
+Gauge_comid = as.data.frame(Gauge_comid)
+Gauge_comid$time = as.numeric(as.character(Gauge_comid$variable))
+Gauge_comid$time = Gauge_comid$time-1
+start = as.Date("1979-01-01")
+Gauge_comid$date = start+Gauge_comid$time
+Gauge_comid$Q = as.numeric(Gauge_comid$value)
+Gauge_comid$COMID = Gauge_comid$comid
+rm(ncIn)
+rm(out7)
+rm(out8)
+rm(out)
+#fwrite(Gauge_comid, "E:\\research\\RODEO\\GRADES\\GRADES_df.csv")
+
+
+
+data = distinct(Eff_widths, ID, .keep_all = TRUE)
+#gauges = read.csv("E:\\research\\RODEO\\VariableBuffers\\6xLength3xWidth\\stats\\gage_stats.csv")
+start = as.Date("1979-01-01")
+data_val = Eff_widths
+RC_End = as.Date("2013-12-31") ###WAs 2014
+RC_year = format(RC_End, "%Y")
+RC_year_1 = format(RC_End+1, "%Y")
+data_val$ID = data_val$ID
+data_val$ID_2 = data_val$ID
+data_val$calc_mean = data_val$Effective_width
+data_val_8415 = data_val[data_val$Date< (RC_End +1),] ##Changed from 2015-01-01
+data_val_8415$Date = as.Date(data_val_8415$Date)
+data_val_8415 = as.data.table(data_val_8415)
+setkey(data_val_8415, ID)
+w_rc=as.data.frame(matrix(numeric(), nrow =nrow(data), ncol = 91))
+q_rc=as.data.frame(matrix(numeric(), nrow =nrow(data), ncol = 91))
+error_stats = as.data.frame(matrix(numeric(), nrow = nrow(data), ncol = 3))
+colnames(error_stats) = c("bias","stde", "rmse")
+#sd_vals_1=as.data.frame(matrix(numeric(), nrow =nrow(data), ncol = 3000))
+totalQ = as.data.frame(matrix(numeric(), nrow = nrow(data), ncol = 3))
+
+
+#xSecIDcol=grep("V", names(Site_number_xsections))
+mInd = array(5, dimnames = NULL)
+width_grouping = 30
+percentiles = c(0.05, 0.95)
+#Gauge_comid = vroom("E:\\research\\RODEO\\GRADES\\GRADES_df.csv")
+data = as.data.frame(data)
+Gauge_comid = as.data.table(Gauge_comid)
+setkey(Gauge_comid, COMID)
+sd.p=function(x){sd(na.omit(x))*sqrt((length(na.omit(x))-1)/length(na.omit(x)))}
+rm(Eff_widths)
+rm(nc)
+
+for(i in 1:nrow(data)){
+  ###Filter to widths near gauge location.   
+  text = paste0("output:",i,"of",nrow(data)," ", round((i/nrow(data)*100)),"%")
+  print(text)
+  xSecIDcol = data[i,]
+  xSecID=xSecIDcol[2:ncol(xSecIDcol)]
+  mInd = match(xSecID, data$ID) #changed from tab
+  # xSecw = as.data.frame(seq(1:100))
+  # xSecq = as.data.frame(seq(1:100))
+  #mInd_paired = which(data_val_8415$ID %in% xSecID)
+  paired_df = data_val_8415[ID == xSecID$ID,]
+  ###Pair largest GRADES flowline with same day Landsat widths. 
+  ################################################################################################    
+  if(nrow(paired_df)>1){
+    pdf_comid = grep("COMID", names(paired_df))
+    pdf_filtering = unique(paired_df[,pdf_comid, with = FALSE])
+    list = unique(na.omit(unlist(pdf_filtering)))
+    if(length(list)>0){
+    testing_df = as.vector(as.numeric(length(list)))
+    } else{next}
+    }else{next}
+    for(l in 1:length(list)){
+      paired_df$COMID = list[l]
+      #Gauge_comid_filt = Gauge_comid[.(paired_df$COMID), allow.cartesian = TRUE,]
+      joining = left_join(paired_df, Gauge_comid, by = c("COMID" = "COMID", "Date" = "date"))
+      testing_df[l] = mean(joining$Q, na.rm = TRUE)
+    }
+    place = as.data.frame(cbind(testing_df, list))
+    if(all(is.na(place$testing_df))){next} else{
+      placement = place$list[place$testing_df==max(place$testing_df, na.rm = TRUE)]
+      paired_df$COMID = placement[1]
+    }
+    #Gauge_comid_filter1  = Gauge_comid[.(paired_df$COMID), allow.cartesian = TRUE]
+    paired_df = left_join(paired_df, Gauge_comid, by = c("COMID" = "COMID", "Date" = "date"))
+    paired_df = distinct(paired_df, Date, .keep_all = TRUE)
+    if(all(!is.na(paired_df$Q))){
+    #########################################################################################################    
+    y = quantile(paired_df$Q, probs = seq(percentiles[1],percentiles[2],.01), na.rm = TRUE)
+    x = quantile(paired_df$calc_mean, probs = seq(percentiles[1],percentiles[2],.01), na.rm = TRUE)
+
+    } else{next}
+    
+
+    paired_df = paired_df[paired_df$Q>=y[[1]]&paired_df$Q<=rev(y)[[1]],]
+    paired_df = paired_df[!is.na(paired_df$`system:index`),]
+    
+    if(length(unique(x))>1&nrow(paired_df)>0){
+      ###Create function to estimate Q from a Landsat width based on quantile pair up. 
+      spl = approxfun(x, y) #, method = "hyman")) #####either usse 'approxfun' or use splinefun with method = "hyman"
+    } else{next}
+
+    estimated_error = spl(paired_df$calc_mean) - paired_df$Q
+    #sd_vals_1[i,1:nrow(paired_df)] = estimated_error
+    
+    
+    spec_widths = all_widths[.(unique(paired_df$ID))]
+    spec_widths = aggregate(spec_widths, by = list(spec_widths$Date), max, na.rm = TRUE)
+    spec_widths = spec_widths[spec_widths$Date<as.Date("2021-01-01"),]
+    #spec_widths$Year = format(spec_widths$Date, "%Y")
+    
+    spec_widths$q = spl(spec_widths$Effective_width)
+    
+    #AnnualAvg = aggregate(spec_widths$q, by=list(spec_widths$Year), mean, na.rm = TRUE)
+    totalQ[i,] = length(na.omit(spec_widths$q))
+    
+    
+    
+    w_rc[i,1:length(unique(x))] = unique(x)
+    q_rc[i,1:length(unique(x))] = spl(unique(x))
+    estimated_rmse = sqrt(mean((estimated_error^2), na.rm= TRUE))
+    estimated_bias = mean(estimated_error, na.rm = TRUE)
+    #estimated_stde = sqrt(var(estimated_error, na.rm = TRUE))
+    estimated_stde = sd.p(estimated_error)
+    
+    
+    corrected_bias = (estimated_bias)*(1/0.04564708) ##Needs to be updated at very end. 
+    #corrected_bias = abs(corrected_bias)
+    corrected_stde = estimated_stde*(1/1.294469) ##Needs to be updated at very end. 
+    corrected_rmse = sqrt((corrected_stde^2) + abs(corrected_bias^2))
+
+    error_stats$bias[i] = corrected_bias
+    error_stats$stde[i] = corrected_stde
+    error_stats$rmse[i] = corrected_rmse
+    
+  }
+    
+widthOutput = cbind(data$ID,data$Sttn_Nm, w_rc)
+qOutput = cbind(data$ID,data$Sttn_Nm, q_rc)
+errorOutput = cbind(data$ID,data$Sttn_Nm, error_stats)
+#statsOutput = cbind(data$ID, sd_vals_1)
+totalqOutput = cbind(data$ID,data$Sttn_Nm, totalQ)
+
+write.csv(widthOutput, paste0(outPath, "width\\", part, ".csv"))
+write.csv(qOutput, paste0(outPath, "discharge\\", part, ".csv"))
+write.csv(errorOutput, paste0(outPath, "error\\", part, ".csv"))
+write.csv(totalqOutput, paste0(outPath, "totalObs\\", part, ".csv"))
+
+}
+# print(r)
+# rm(list = ls(all.names = TRUE))
+# }
+
+
+
+stopCluster(cl)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
